@@ -1,0 +1,67 @@
+// ReSpeaker 4-Mic Array HAT, captured with stock kernel drivers only.
+//
+// The AC108 is set up from user space by `ac108ctl init` and is the I2S bit and
+// frame clock master. This overlay only describes the Pi side: bcm2835-i2s as
+// clock consumer, joined by simple-audio-card to the generic, control-less
+// dmic-codec. There is deliberately no I2C node for the AC108 (0x3b), so no
+// kernel driver claims it.
+//
+// The Pi's I2S block captures 2 x 32-bit slots per frame. The AC108 sends one
+// 128-bit frame of 4 x 32-bit slots per sample; the Pi, locked to its frame
+// sync, sees that as two 64-bit frames. So ALSA sees 2 channels at twice the
+// sample rate (32 kHz for 16 kHz), and user space regroups each pair of frames
+// into one 4-mic frame. Same layout as Seeed's overlay, without the channel
+// count override.
+//
+// Structure follows the Raspberry Pi kernel's own codec-master overlays
+// (e.g. audioinjector-ultra). Build: dtc -@ -I dts -O dtb -o ac108-4mic.dtbo <this>
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2835";
+
+	fragment@0 {
+		target = <&i2s_clk_consumer>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@1 {
+		target-path = "/";
+		__overlay__ {
+			ac108_dai: ac108-dmic {
+				compatible = "dmic-codec";
+				#sound-dai-cells = <0>;
+				num-channels = <2>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&sound>;
+		__overlay__ {
+			compatible = "simple-audio-card";
+			i2s-controller = <&i2s_clk_consumer>;
+			status = "okay";
+
+			simple-audio-card,name = "ac108-4mic";
+			simple-audio-card,format = "dsp_a";
+			simple-audio-card,bitclock-master = <&codec_dai>;
+			simple-audio-card,frame-master = <&codec_dai>;
+
+			simple-audio-card,cpu {
+				sound-dai = <&i2s_clk_consumer>;
+				dai-tdm-slot-num = <2>;
+				dai-tdm-slot-width = <32>;
+			};
+
+			codec_dai: simple-audio-card,codec {
+				sound-dai = <&ac108_dai>;
+			};
+		};
+	};
+};

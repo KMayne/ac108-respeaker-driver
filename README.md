@@ -13,18 +13,27 @@ This project splits the job in two:
 - **`ac108ctl`** (this crate, Rust, user space) configures the AC108 once over
   `/dev/i2c-1`: power, PLL (24 MHz to 24.576 MHz), 4-slot TDM, ADCs, gains. The
   chip then runs as I2S clock master and streams all 4 mics continuously.
-- **A device tree overlay** (`overlay/`, planned) connects the Pi's stock
-  `bcm2835-i2s` driver, as clock slave, to the stock `dmic-codec` placeholder.
-  No custom kernel code at all.
+- **A device tree overlay** (`overlay/ac108-4mic-overlay.dts`) connects the
+  Pi's stock `bcm2835-i2s` driver, as clock consumer, to the stock
+  `dmic-codec` placeholder. No custom kernel code at all, and no kernel driver
+  claims the AC108's I2C address.
+
+The Pi's I2S block captures only 2 slots per frame. The AC108 sends one
+128-bit frame (4 x 32-bit slots) per sample, which the Pi sees as two 64-bit
+frames, so ALSA captures **2 channels at twice the sample rate** (32 kHz for
+16 kHz audio), and each pair of ALSA frames is one 4-mic frame. Seeed's overlay
+uses the same layout, but hides it behind a channel-count override in its
+kernel driver.
 
 Because the clocks are already running before any capture starts, the
 start-up timing problem that breaks the kernel driver can't happen.
 
 ## Status
 
-Work in progress. Fixed to what the HAT needs: one AC108, 4 channels, 32-bit
-slots, 24 MHz MCLK. Sample rates from the 24.576 MHz family (8, 12, 16, 24, 32,
-48 kHz).
+Work in progress: the AC108 setup passes its tests against the reference
+capture; capture through the overlay is not yet tested on hardware. Fixed to
+what the HAT needs: one AC108, 4 channels, 32-bit slots, 24 MHz MCLK. Sample
+rates from the 24.576 MHz family (8, 12, 16, 24, 32, 48 kHz).
 
 ## Building
 
@@ -77,7 +86,9 @@ This is a clean user-space rewrite, but it relies on other people's work:
   #22, <https://github.com/HinTak/seeed-voicecard/issues/22>. These pinned down
   the sleeping-I2C-in-atomic-trigger bug, which is the reason for this design.
 - **The Raspberry Pi kernel's stock audio drivers** (`bcm2835-i2s`,
-  `simple-audio-card`, `dmic-codec`), which do the actual audio transport.
+  `simple-audio-card`, `dmic-codec`), which do the actual audio transport:
+  <https://github.com/raspberrypi/linux>. The overlay's structure follows the
+  kernel's own codec-as-clock-master overlays, such as `audioinjector-ultra`.
 
 ## License
 
