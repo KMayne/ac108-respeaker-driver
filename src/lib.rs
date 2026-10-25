@@ -8,6 +8,8 @@
 pub mod bus;
 pub mod config;
 pub mod fake;
+#[cfg(target_os = "linux")]
+pub mod i2c;
 pub mod init;
 pub mod regs;
 

@@ -156,8 +156,8 @@ fn rate_sets_the_adc_rate_code_and_bit_clock_divider() {
     // BCLK = rate * 4 channels * 32 bits; divider = 24.576 MHz / BCLK.
     // (rate, ADC_SPRC code, BCLKDIV code for that divider)
     for (hz, rate_code, div_code) in [
-        (8_000, 0, 9),   // /32
-        (12_000, 2, 8),  // /24 -- rate code 1 is 11.025 kHz
+        (8_000, 0, 8),   // /24
+        (12_000, 2, 7),  // /16 -- rate code 1 is 11.025 kHz
         (16_000, 3, 6),  // /12
         (24_000, 5, 5),  // /8
         (32_000, 6, 4),  // /6
