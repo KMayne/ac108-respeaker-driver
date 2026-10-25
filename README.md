@@ -68,6 +68,23 @@ arecord -D hw:ac1084mic -c 2 -r 16000 -f S32_LE out.wav
 `ac108ctl stop` releases the clock pins and stops the PLL; `ac108ctl status`
 and `ac108ctl dump` show what the chip is doing.
 
+## Mic layout
+
+Slot N carries ADC N. Looking down on the HAT with the Pi's USB/Ethernet ports
+to the right (found by tapping each corner and checking which slot peaks):
+
+```
+   far left: slot 2      far right: slot 3
+  near left: slot 1     near right: slot 4
+```
+
+## Looking at captures
+
+`tools/capture.py [seconds] [--host voice-pi]` records on the Pi over SSH,
+copies the capture back, splits it into one WAV per mic plus a 4-channel WAV,
+and opens a page with the 4 waveforms laid out like the board, each playable.
+Output goes to `captures/<timestamp>/` (git-ignored).
+
 `examples/gpio_scope.rs` is a crude logic analyser for the I2S pins (BCLK,
 frame sync, data), useful if capture looks wrong: a missing frame sync gives
 randomly misaligned samples. (That turned out to be a dead GPIO19 on the first
