@@ -78,6 +78,24 @@ to the right (found by tapping each corner and checking which slot peaks):
   near left: slot 1     near right: slot 4
 ```
 
+The mics sit on the corners of a square, 81.3 mm apart diagonally and about
+57.5 mm apart along each side. Positions in mm from the centre of the array, x
+towards the USB ports, y towards the far edge:
+
+| Slot | Corner | x | y |
+| --- | --- | --- | --- |
+| 1 | near left | -28.7 | -28.7 |
+| 2 | far left | -28.7 | +28.7 |
+| 3 | far right | +28.7 | +28.7 |
+| 4 | near right | +28.7 | -28.7 |
+
+The spacing is from ODAS's config for this board
+(<https://github.com/introlab/odas/blob/master/config/odaslive/respeaker_4_mic_array.cfg>,
+radius 40.5 mm) and Seeed's direction-finding code
+(<https://github.com/respeaker/mic_array/blob/master/mic_array.py>,
+`MIC_DISTANCE_4 = 0.08127`). At 343 m/s, sound takes at most 237 us to cross the
+diagonal: 3.8 samples at 16 kHz, so beamforming needs fractional-sample delays.
+
 ## Looking at captures
 
 `tools/capture.py [seconds] [--host voice-pi]` records on the Pi over SSH,
@@ -140,6 +158,8 @@ This is a clean user-space rewrite, but it relies on other people's work:
   <https://github.com/HinTak/seeed-voicecard/pull/45>, and the report in issue
   #22, <https://github.com/HinTak/seeed-voicecard/issues/22>. These pinned down
   the sleeping-I2C-in-atomic-trigger bug, which is the reason for this design.
+- **Mic geometry** from ODAS (IntRoLab, <https://github.com/introlab/odas>) and
+  Seeed's mic_array (<https://github.com/respeaker/mic_array>).
 - **The Raspberry Pi kernel's stock audio drivers** (`bcm2835-i2s`,
   `simple-audio-card`, `dmic-codec`), which do the actual audio transport:
   <https://github.com/raspberrypi/linux>. The overlay's structure follows the
