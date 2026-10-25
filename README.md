@@ -18,22 +18,53 @@ This project splits the job in two:
   `dmic-codec` placeholder. No custom kernel code at all, and no kernel driver
   claims the AC108's I2C address.
 
-The Pi's I2S block captures only 2 slots per frame. The AC108 sends one
-128-bit frame (4 x 32-bit slots) per sample, which the Pi sees as two 64-bit
-frames, so ALSA captures **2 channels at twice the sample rate** (32 kHz for
-16 kHz audio), and each pair of ALSA frames is one 4-mic frame. Seeed's overlay
-uses the same layout, but hides it behind a channel-count override in its
-kernel driver.
+The Pi's I2S block captures 2 slots per frame-sync pulse. So the AC108 sends
+4 x **16-bit** slots in one 64-bit frame, which is exactly one Pi frame: ALSA
+captures **2 channels of 32 bits at 16 kHz**, and each 32-bit sample holds two
+mics (slots 1 and 2, then 3 and 4, earlier slot in the upper half).
+`src/frames.rs` splits them. Every Pi frame starts on a frame-sync pulse, so
+mic N is always in slot N.
+
+Seeed's layout (4 x 32-bit slots, a 128-bit frame) doesn't fit: the Pi sees
+each AC108 frame as two of its own, and which half comes first changes from one
+capture to the next. It's still available as `Config::seeed_reference()`, the
+configuration the reference register capture used.
+
+The AC108 is the clock master: its sample clock comes from the HAT's 24 MHz
+crystal, it streams continuously, and the Pi's I2S pins are only ever inputs.
+After reset the AC108's clock pins are outputs, so a Pi-driven clock would
+fight them until the setup ran.
 
 Because the clocks are already running before any capture starts, the
 start-up timing problem that breaks the kernel driver can't happen.
 
 ## Status
 
-Work in progress: the AC108 setup passes its tests against the reference
-capture; capture through the overlay is not yet tested on hardware. Fixed to
-what the HAT needs: one AC108, 4 channels, 32-bit slots, 24 MHz MCLK. Sample
-rates from the 24.576 MHz family (8, 12, 16, 24, 32, 48 kHz).
+Working on a Raspberry Pi 4 (Raspberry Pi OS Bookworm, kernel 6.12): 4 mics at
+16 kHz, fixed mic order across captures (checked by muting each mic in turn),
+no kernel errors. Fixed to what the HAT needs: one AC108, 4 channels, 24 MHz
+MCLK. Sample rates from the 24.576 MHz family (8, 12, 16, 24, 32, 48 kHz).
+
+Defaults: 24 dB analog gain and 0 dB digital volume. Seeed's defaults (0 dB
+analog, +46.5 dB digital) leave the mics down in the ADC's noise floor and
+magnify the quantisation steps.
+
+## Using it on the Pi
+
+```sh
+echo i2c-dev | sudo tee -a /etc/modules
+sudo cp ac108-4mic.dtbo /boot/firmware/overlays/     # built from overlay/
+echo dtoverlay=ac108-4mic | sudo tee -a /boot/firmware/config.txt
+sudo reboot
+
+sudo ./ac108ctl init          # once per boot
+arecord -D hw:ac1084mic -c 2 -r 16000 -f S32_LE out.wav
+```
+
+`examples/gpio_scope.rs` is a crude logic analyser for the I2S pins (BCLK,
+frame sync, data), useful if capture looks wrong: a missing frame sync gives
+randomly misaligned samples. (That turned out to be a dead GPIO19 on the first
+test Pi.)
 
 ## Building
 

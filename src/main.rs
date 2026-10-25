@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use ac108::bus::StdDelay;
 use ac108::i2c::LinuxI2c;
 use ac108::regs::{self, bit};
+use ac108::config::SlotWidth;
 use ac108::{configure, Config, Error, RegisterBus};
 
 const USAGE: &str = "\
@@ -17,9 +18,15 @@ Options:
   --bus N                I2C bus number (default 1, i.e. /dev/i2c-1)
   --addr 0xNN            AC108 I2C address (default 0x3b)
   --rate HZ              init: sample rate (default 16000)
-  --pga-gain DB          init: analog mic gain, 0-31 dB (default 0)
-  --digital-volume 0xNN  init: raw digital volume, 0xa0 = 0 dB (default 0xde)
-  --slot-sources A,B,C,D init: ADC (0-3) carried by TDM slots 1-4 (default 2,3,0,1)
+  --pga-gain DB          init: analog mic gain, 0-31 dB (default 24)
+  --digital-volume 0xNN  init: raw digital volume, 0xa0 = 0 dB (default 0xa0)
+  --slot-sources A,B,C,D init: ADC (0-3) carried by TDM slots 1-4 (default 0,1,2,3)
+  --slot-bits 16|32      init: TDM slot size (default 16; 32 is Seeed's layout,
+                         whose mic order changes between captures on the Pi)
+
+With the default 16-bit slots, capture with:
+  arecord -D hw:ac1084mic -c 2 -r 16000 -f S32_LE out.wav
+Each 32-bit ALSA sample holds two mics: slot 1 (upper 16 bits) and slot 2, then 3 and 4.
 ";
 
 struct Args {
@@ -53,6 +60,13 @@ fn parse_args() -> Result<Args, String> {
                 args.cfg.slot_sources =
                     parts.try_into().map_err(|_| format!("--slot-sources needs 4 values, got {v}"))?;
             }
+            "--slot-bits" => {
+                args.cfg.slot_width = match value()?.as_str() {
+                    "16" => SlotWidth::Bits16,
+                    "32" => SlotWidth::Bits32,
+                    v => return Err(format!("--slot-bits must be 16 or 32, got {v}")),
+                }
+            }
             "-h" | "--help" => return Err(String::new()),
             _ => return Err(format!("unknown option {flag}")),
         }
@@ -75,9 +89,14 @@ fn run(args: &Args) -> Result<(), Error> {
     match args.command.as_str() {
         "init" => {
             configure(&mut chip, &mut StdDelay, &args.cfg)?;
+            let c = &args.cfg;
             println!(
-                "AC108 streaming: {} Hz, 4 x 32-bit TDM slots, PGA {} dB, digital volume 0x{:02x}",
-                args.cfg.sample_rate_hz, args.cfg.pga_gain_db, args.cfg.digital_volume
+                "AC108 streaming: {} Hz, 4 x {}-bit TDM slots carrying ADCs {:?}, PGA {} dB, digital volume 0x{:02x}",
+                c.sample_rate_hz,
+                c.slot_width.bits(),
+                c.slot_sources.map(|s| s + 1),
+                c.pga_gain_db,
+                c.digital_volume
             );
         }
         "status" => {

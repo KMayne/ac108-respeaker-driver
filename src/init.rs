@@ -2,7 +2,7 @@
 //! across `set_fmt`, `hw_params`, DAPM power-up and `set_clock`, but runs once,
 //! in order, and only turns the clock outputs on after the PLL has locked.
 
-use crate::config::{CHANNELS, PLL_24M_TO_24_576M, SLOT_BITS};
+use crate::config::{CHANNELS, PLL_24M_TO_24_576M};
 use crate::regs::*;
 use crate::{Config, Delay, Error, RegisterBus};
 
@@ -93,13 +93,13 @@ fn configure_pll(bus: &mut impl RegisterBus) -> Result<(), Error> {
     )
 }
 
-/// DSP mode A (`dsp_a`) TDM: 4 slots of 32 bits, data one BCLK after the LRCK
-/// pulse, normal clock polarities.
+/// DSP mode A (`dsp_a`) TDM: 4 slots, data one BCLK after the frame-sync pulse,
+/// normal clock polarities.
 fn configure_tdm(bus: &mut impl RegisterBus, cfg: &Config) -> Result<(), Error> {
     bus.update_bits(I2S_BCLK_CTRL, bit(BCLK_POLARITY) | 0x0f << BCLKDIV, cfg.bclk_div_code()? << BCLKDIV)?;
 
     // LRCK period in BCLKs, minus one: the whole frame in PCM mode.
-    let period = (CHANNELS * SLOT_BITS - 1) as u16;
+    let period = (cfg.frame_bits() - 1) as u16;
     bus.update_bits(
         I2S_LRCK_CTRL1,
         bit(LRCK_POLARITY) | 0x03 << LRCK_PERIODH,
@@ -110,8 +110,9 @@ fn configure_tdm(bus: &mut impl RegisterBus, cfg: &Config) -> Result<(), Error> 
     // PCM mode, no channel-number encoding, 1-BCLK data offset, drive (not
     // hi-z) during unused slot time, transmitter state normal.
     bus.write(I2S_FMT_CTRL1, 0 << ENCD_SEL | 0 << MODE_SEL | bit(TX2_OFFSET) | bit(TX1_OFFSET) | bit(TX_STATE))?;
-    // 32-bit samples in 32-bit slots (code 7 = 32 bits).
-    bus.write(I2S_FMT_CTRL2, 7 << SLOT_WIDTH_SEL | 7 << SAMPLE_RESOLUTION)?;
+    // Sample resolution equal to the slot width.
+    let w = cfg.slot_width.code();
+    bus.write(I2S_FMT_CTRL2, w << SLOT_WIDTH_SEL | w << SAMPLE_RESOLUTION)?;
     // MSB first, sign extension in unused bits, LRCK 1 BCLK wide, linear PCM.
     bus.update_bits(I2S_FMT_CTRL3, 0x80 | 0x03 << 5 | 0x04 | 0x03, 0x03 << 5)?;
 

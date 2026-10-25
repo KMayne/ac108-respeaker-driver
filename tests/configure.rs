@@ -1,5 +1,6 @@
 use ac108::fake::{parse_regs, FakeAc108, Op};
 use ac108::regs::{self, bit};
+use ac108::config::SlotWidth;
 use ac108::{configure, Config, Error};
 
 const RESET: &str = include_str!("fixtures/ac108-reset.regs");
@@ -24,9 +25,9 @@ fn last_index_of(log: &[Op], pred: impl Fn(&Op) -> bool) -> Option<usize> {
 }
 
 #[test]
-fn default_config_reproduces_the_reference_capture_from_reset() {
+fn seeed_reference_config_reproduces_the_reference_capture_from_reset() {
     let mut c = chip();
-    run(&mut c, &Config::default()).expect("configure");
+    run(&mut c, &Config::seeed_reference()).expect("configure");
 
     let want = parse_regs(CAPTURE_16K_4CH);
     let got = c.registers();
@@ -42,7 +43,7 @@ fn also_works_from_a_dirty_state_because_it_resets_first() {
     let mut c = chip();
     run(&mut c, &Config::default()).unwrap();
     run(&mut c, &Config { pga_gain_db: 20, ..Config::default() }).unwrap();
-    run(&mut c, &Config::default()).unwrap();
+    run(&mut c, &Config::seeed_reference()).unwrap();
     assert_eq!(c.registers(), &parse_regs(CAPTURE_16K_4CH));
 }
 
@@ -85,7 +86,7 @@ fn expects_the_reset_command_to_go_unacknowledged_and_rechecks_the_chip_id() {
 fn also_works_with_a_chip_that_acknowledges_its_reset() {
     let mut c = chip();
     c.nacks_reset = false;
-    run(&mut c, &Config::default()).unwrap();
+    run(&mut c, &Config::seeed_reference()).unwrap();
     assert_eq!(c.registers(), &parse_regs(CAPTURE_16K_4CH));
 }
 
@@ -175,20 +176,58 @@ fn rejects_rates_the_24_576_mhz_clock_cannot_make() {
 
 #[test]
 fn rate_sets_the_adc_rate_code_and_bit_clock_divider() {
-    // BCLK = rate * 4 channels * 32 bits; divider = 24.576 MHz / BCLK.
-    // (rate, ADC_SPRC code, BCLKDIV code for that divider)
-    for (hz, rate_code, div_code) in [
-        (8_000, 0, 8),   // /24
-        (12_000, 2, 7),  // /16 -- rate code 1 is 11.025 kHz
-        (16_000, 3, 6),  // /12
-        (24_000, 5, 5),  // /8
-        (32_000, 6, 4),  // /6
-        (48_000, 8, 3),  // /4
+    // BCLK = rate * 4 slots * slot bits; divider = 24.576 MHz / BCLK.
+    // (rate, ADC_SPRC code, BCLKDIV code with 16-bit slots, with 32-bit slots)
+    for (hz, rate_code, div16, div32) in [
+        (8_000, 0, 10, 8),  // /48, /24 -- rate code 1 is 11.025 kHz
+        (12_000, 2, 9, 7),  // /32, /16
+        (16_000, 3, 8, 6),  // /24, /12
+        (24_000, 5, 7, 5),  // /16, /8
+        (32_000, 6, 6, 4),  // /12, /6
+        (48_000, 8, 5, 3),  // /8,  /4
     ] {
-        let mut c = chip();
-        run(&mut c, &Config { sample_rate_hz: hz, ..Config::default() }).unwrap();
-        let r = c.registers();
-        assert_eq!(r[regs::ADC_SPRC as usize] & 0x0f, rate_code, "{hz} Hz rate code");
-        assert_eq!(r[regs::I2S_BCLK_CTRL as usize] & 0x0f, div_code, "{hz} Hz BCLK divider");
+        for (width, div_code) in [(SlotWidth::Bits16, div16), (SlotWidth::Bits32, div32)] {
+            let mut c = chip();
+            run(&mut c, &Config { sample_rate_hz: hz, slot_width: width, ..Config::default() }).unwrap();
+            let r = c.registers();
+            assert_eq!(r[regs::ADC_SPRC as usize] & 0x0f, rate_code, "{hz} Hz rate code");
+            assert_eq!(r[regs::I2S_BCLK_CTRL as usize] & 0x0f, div_code, "{hz} Hz {width:?} BCLK divider");
+        }
+    }
+}
+
+#[test]
+fn default_packs_four_16_bit_slots_into_one_64_bit_frame() {
+    // One AC108 frame = one Pi frame (2 x 32 bits), so every Pi frame starts on a
+    // frame-sync pulse and the mic order can't depend on when capture started.
+    let mut c = chip();
+    run(&mut c, &Config::default()).unwrap();
+    let r = c.registers();
+    assert_eq!(r[regs::I2S_FMT_CTRL2 as usize], 0x33, "16-bit samples in 16-bit slots");
+    assert_eq!(r[regs::I2S_LRCK_CTRL2 as usize], 63, "frame of 64 BCLKs");
+    assert_eq!(r[regs::I2S_LRCK_CTRL1 as usize] & 0x03, 0, "frame length high bits");
+    assert_eq!(r[regs::I2S_TX1_CTRL1 as usize], 3, "4 slots");
+}
+
+#[test]
+fn default_carries_mic_n_in_slot_n() {
+    let mut c = chip();
+    run(&mut c, &Config::default()).unwrap();
+    // slot1 <- ADC1, slot2 <- ADC2, slot3 <- ADC3, slot4 <- ADC4
+    assert_eq!(c.registers()[regs::I2S_TX1_CHMP_CTRL1 as usize], 0b11_10_01_00);
+}
+
+#[test]
+fn default_uses_analog_gain_rather_than_digital() {
+    // Gain before the ADC lifts the mics above its noise floor; digital gain only
+    // magnifies quantisation steps (Seeed's 0 dB PGA + 46.5 dB digital did that).
+    let mut c = chip();
+    run(&mut c, &Config::default()).unwrap();
+    let r = c.registers();
+    for reg in regs::ADC_DVOL_CTRL {
+        assert_eq!(r[reg as usize], 0xa0, "digital volume 0 dB at 0x{reg:02x}");
+    }
+    for reg in regs::ANA_PGA_CTRL {
+        assert_eq!(r[reg as usize] >> regs::ADC_ANALOG_PGA, 24, "PGA at 0x{reg:02x}");
     }
 }

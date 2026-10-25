@@ -6,12 +6,9 @@
 // dmic-codec. There is deliberately no I2C node for the AC108 (0x3b), so no
 // kernel driver claims it.
 //
-// The Pi's I2S block captures 2 x 32-bit slots per frame. The AC108 sends one
-// 128-bit frame of 4 x 32-bit slots per sample; the Pi, locked to its frame
-// sync, sees that as two 64-bit frames. So ALSA sees 2 channels at twice the
-// sample rate (32 kHz for 16 kHz), and user space regroups each pair of frames
-// into one 4-mic frame. Same layout as Seeed's overlay, without the channel
-// count override.
+// The Pi's I2S block captures 2 x 32-bit slots per frame. `ac108ctl init` sets
+// the AC108 to 4 x 16-bit slots per 64-bit frame, so ALSA sees 2 channels of
+// 32 bits at the sample rate, each holding two mics.
 //
 // Structure follows the Raspberry Pi kernel's own codec-master overlays
 // (e.g. audioinjector-ultra). Build: dtc -@ -I dts -O dtb -o ac108-4mic.dtbo <this>

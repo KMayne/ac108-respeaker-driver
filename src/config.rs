@@ -5,10 +5,37 @@ use crate::Error;
 pub const MCLK_HZ: u32 = 24_000_000;
 /// The PLL turns MCLK into this system clock (the 48 kHz family).
 pub const SYSCLK_HZ: u32 = 24_576_000;
-/// One AC108, four mics.
+/// One AC108, four mics, one TDM slot each.
 pub const CHANNELS: u32 = 4;
-/// Each mic gets a 32-bit TDM slot.
-pub const SLOT_BITS: u32 = 32;
+
+/// TDM slot size, which is also the sample size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotWidth {
+    /// 4 x 16 bits = one 64-bit frame, exactly what the Pi's I2S block captures
+    /// per frame-sync pulse, so the mic order is fixed. Use this.
+    Bits16,
+    /// 4 x 32 bits = a 128-bit frame, which the Pi captures as two 64-bit
+    /// frames; which half comes first changes from one capture to the next.
+    /// Only here because it is what Seeed's driver uses.
+    Bits32,
+}
+
+impl SlotWidth {
+    pub fn bits(self) -> u32 {
+        match self {
+            SlotWidth::Bits16 => 16,
+            SlotWidth::Bits32 => 32,
+        }
+    }
+
+    /// I2S_FMT_CTRL2 code for both the slot width and the sample resolution.
+    pub fn code(self) -> u8 {
+        match self {
+            SlotWidth::Bits16 => 3,
+            SlotWidth::Bits32 => 7,
+        }
+    }
+}
 
 /// PLL settings for 24 MHz in, 24.576 MHz out:
 /// FOUT = FIN * N / ((M1 + 1) * (M2 + 1) * (K1 + 1) * (K2 + 1)) = 24 MHz * 128 / (5 * 25).
@@ -48,17 +75,37 @@ pub struct Config {
     pub digital_volume: u8,
     /// Which ADC (0..=3) each of the 4 TDM slots carries.
     pub slot_sources: [u8; 4],
+    pub slot_width: SlotWidth,
 }
 
 impl Default for Config {
-    /// Matches what Seeed's driver and mixer settings produce. The driver rotates
-    /// the slots (ADC3, ADC4, ADC1, ADC2) to undo a rotation in its CPU-side setup.
+    /// 16 kHz, 16-bit slots, mic N in slot N, 24 dB of analog gain and the
+    /// digital volume at 0 dB.
     fn default() -> Self {
-        Config { sample_rate_hz: 16_000, pga_gain_db: 0, digital_volume: 0xde, slot_sources: [2, 3, 0, 1] }
+        Config {
+            sample_rate_hz: 16_000,
+            pga_gain_db: 24,
+            digital_volume: 0xa0,
+            slot_sources: [0, 1, 2, 3],
+            slot_width: SlotWidth::Bits16,
+        }
     }
 }
 
 impl Config {
+    /// What Seeed's driver and default mixer settings produce: 32-bit slots,
+    /// slots rotated (ADC3, ADC4, ADC1, ADC2), 0 dB analog gain and +46.5 dB
+    /// digital gain. Kept because the reference register capture used it.
+    pub fn seeed_reference() -> Self {
+        Config {
+            sample_rate_hz: 16_000,
+            pga_gain_db: 0,
+            digital_volume: 0xde,
+            slot_sources: [2, 3, 0, 1],
+            slot_width: SlotWidth::Bits32,
+        }
+    }
+
     /// ADC_SPRC code for the sample rate.
     pub fn rate_code(&self) -> Result<u8, Error> {
         RATE_CODES
@@ -95,7 +142,12 @@ impl Config {
         Ok(())
     }
 
+    /// BCLKs per frame.
+    pub fn frame_bits(&self) -> u32 {
+        CHANNELS * self.slot_width.bits()
+    }
+
     fn bclk_hz(&self) -> u32 {
-        self.sample_rate_hz * CHANNELS * SLOT_BITS
+        self.sample_rate_hz * self.frame_bits()
     }
 }
