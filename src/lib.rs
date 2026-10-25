@@ -11,6 +11,7 @@ pub mod fake;
 #[cfg(target_os = "linux")]
 pub mod i2c;
 pub mod init;
+pub mod regroup;
 pub mod regs;
 
 pub use bus::{Delay, RegisterBus};
