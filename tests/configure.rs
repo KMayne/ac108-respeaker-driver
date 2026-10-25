@@ -231,3 +231,26 @@ fn default_uses_analog_gain_rather_than_digital() {
         assert_eq!(r[reg as usize] >> regs::ADC_ANALOG_PGA, 24, "PGA at 0x{reg:02x}");
     }
 }
+
+#[test]
+fn stop_releases_the_clock_pins_then_stops_the_pll() {
+    let mut c = chip();
+    run(&mut c, &Config::default()).unwrap();
+    let before = c.log().len();
+    ac108::stop(&mut c).unwrap();
+
+    let r = c.registers();
+    let i2s = r[regs::I2S_CTRL as usize];
+    let driving = bit(regs::BCLK_IOEN) | bit(regs::LRCK_IOEN) | bit(regs::TXEN) | bit(regs::GEN);
+    assert_eq!(i2s & driving, 0, "I2S still driving: 0x{i2s:02x}");
+    assert_eq!(r[regs::PLL_CTRL1 as usize] & bit(regs::PLL_EN), 0, "PLL still on");
+
+    // Clock pins go to inputs before the PLL stops, so they never glitch out.
+    let writes: Vec<u8> = c.log()[before..]
+        .iter()
+        .filter_map(|op| if let Op::Write(r, _) = op { Some(*r) } else { None })
+        .collect();
+    let i2s_at = writes.iter().position(|&r| r == regs::I2S_CTRL).expect("I2S_CTRL not written");
+    let pll_at = writes.iter().position(|&r| r == regs::PLL_CTRL1).expect("PLL_CTRL1 not written");
+    assert!(i2s_at < pll_at, "stopped the PLL before releasing the clock pins");
+}

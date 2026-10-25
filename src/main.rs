@@ -4,13 +4,14 @@ use ac108::bus::StdDelay;
 use ac108::i2c::LinuxI2c;
 use ac108::regs::{self, bit};
 use ac108::config::SlotWidth;
-use ac108::{configure, Config, Error, RegisterBus};
+use ac108::{configure, stop, Config, Error, RegisterBus};
 
 const USAGE: &str = "\
 Usage: ac108ctl <command> [options]
 
 Commands:
   init     Reset the AC108 and start streaming 4 mics over TDM
+  stop     Stop streaming and release the clock pins
   status   Show chip ID, PLL lock and whether I2S is running
   dump     Print every register as \"0xNN 0xVV\" lines
 
@@ -42,7 +43,7 @@ fn parse_args() -> Result<Args, String> {
     if matches!(command.as_str(), "-h" | "--help" | "help") {
         return Err(String::new());
     }
-    if !matches!(command.as_str(), "init" | "status" | "dump") {
+    if !matches!(command.as_str(), "init" | "stop" | "status" | "dump") {
         return Err(format!("unknown command {command}"));
     }
     let mut args = Args { command, bus: 1, addr: 0x3b, cfg: Config::default() };
@@ -98,6 +99,10 @@ fn run(args: &Args) -> Result<(), Error> {
                 c.pga_gain_db,
                 c.digital_volume
             );
+        }
+        "stop" => {
+            stop(&mut chip)?;
+            println!("AC108 stopped, clock pins released");
         }
         "status" => {
             let id = chip.read(regs::CHIP_RST)?;

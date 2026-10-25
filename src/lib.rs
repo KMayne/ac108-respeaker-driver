@@ -16,7 +16,7 @@ pub mod regs;
 
 pub use bus::{Delay, RegisterBus};
 pub use config::Config;
-pub use init::configure;
+pub use init::{configure, stop};
 
 use std::fmt;
 

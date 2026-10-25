@@ -1,0 +1,21 @@
+# Configures the ReSpeaker 4-Mic HAT's AC108 at boot, so it is streaming before
+# anything opens the capture device. Install:
+#   sudo install -m 0755 ac108ctl /usr/local/bin/
+#   sudo install -m 0644 ac108-init.service /etc/systemd/system/
+#   sudo systemctl enable --now ac108-init.service
+
+[Unit]
+Description=Configure the AC108 on the ReSpeaker 4-Mic HAT
+# /dev/i2c-1 comes from the i2c-dev module, loaded via /etc/modules.
+After=systemd-modules-load.service
+Before=sound.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ac108ctl init
+# Stop the clocks when the service stops, e.g. before reconfiguring by hand.
+ExecStop=/usr/local/bin/ac108ctl stop
+
+[Install]
+WantedBy=multi-user.target

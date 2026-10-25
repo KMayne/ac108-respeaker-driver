@@ -57,9 +57,16 @@ sudo cp ac108-4mic.dtbo /boot/firmware/overlays/     # built from overlay/
 echo dtoverlay=ac108-4mic | sudo tee -a /boot/firmware/config.txt
 sudo reboot
 
-sudo ./ac108ctl init          # once per boot
+# Configure the AC108 at every boot
+sudo install -m 0755 ac108ctl /usr/local/bin/
+sudo install -m 0644 deploy/ac108-init.service /etc/systemd/system/
+sudo systemctl enable --now ac108-init.service
+
 arecord -D hw:ac1084mic -c 2 -r 16000 -f S32_LE out.wav
 ```
+
+`ac108ctl stop` releases the clock pins and stops the PLL; `ac108ctl status`
+and `ac108ctl dump` show what the chip is doing.
 
 `examples/gpio_scope.rs` is a crude logic analyser for the I2S pins (BCLK,
 frame sync, data), useful if capture looks wrong: a missing frame sync gives

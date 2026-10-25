@@ -160,3 +160,11 @@ fn wait_for_pll_lock(bus: &mut impl RegisterBus, delay: &mut impl Delay) -> Resu
         waited += PLL_POLL_MS;
     }
 }
+
+/// Stop streaming: release the BCLK/LRCK pins (back to inputs) and turn off the
+/// transmitter, then stop the PLL. Leaves the rest of the configuration alone.
+pub fn stop(bus: &mut impl RegisterBus) -> Result<(), Error> {
+    bus.write(I2S_CTRL, bit(SDO2_EN) | bit(SDO1_EN))?;
+    let pll_on = bit(PLL_EN) | bit(PLL_COM_EN);
+    bus.update_bits(PLL_CTRL1, pll_on, 0)
+}
