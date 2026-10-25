@@ -1,0 +1,7 @@
+# Cross-compile for the Pi with `cargo pi`: a static aarch64 binary, linked by the
+# rust-lld that ships with Rust, so no cross C toolchain is needed.
+[alias]
+pi = "build --release --target aarch64-unknown-linux-musl"
+
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"

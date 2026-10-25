@@ -1,0 +1,21 @@
+[package]
+name = "ac108-respeaker-driver"
+version = "0.1.0"
+edition = "2021"
+description = "User-space setup for the AC108 ADC on the ReSpeaker 4-Mic Array HAT, so the stock Linux I2S driver can capture from it"
+license = "GPL-2.0-only"
+publish = false
+
+[lib]
+name = "ac108"
+
+[[bin]]
+name = "ac108ctl"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+strip = true
+lto = true
