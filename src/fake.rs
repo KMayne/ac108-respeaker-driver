@@ -19,13 +19,16 @@ pub struct FakeAc108 {
     reset_values: [u8; 256],
     /// Whether the PLL reports lock once it's enabled.
     pub pll_locks: bool,
+    /// The real chip resets before acknowledging the reset command's data
+    /// byte, so that write fails with a NACK even though the reset happens.
+    pub nacks_reset: bool,
     log: Rc<RefCell<Vec<Op>>>,
 }
 
 impl FakeAc108 {
     /// A chip in the given power-on state (e.g. from `parse_regs`).
     pub fn new(reset_values: [u8; 256]) -> Self {
-        FakeAc108 { regs: reset_values, reset_values, pll_locks: true, log: Rc::default() }
+        FakeAc108 { regs: reset_values, reset_values, pll_locks: true, nacks_reset: true, log: Rc::default() }
     }
 
     pub fn registers(&self) -> &[u8; 256] {
@@ -69,6 +72,9 @@ impl RegisterBus for FakeAc108 {
             regs::CHIP_RST => {
                 if value == regs::CHIP_RST_VAL {
                     self.regs = self.reset_values;
+                    if self.nacks_reset {
+                        return Err(Error::Io(std::io::Error::other("NACK (chip reset mid-transfer)")));
+                    }
                 }
             }
             // The lock status bit is read-only and follows the PLL.

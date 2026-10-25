@@ -68,6 +68,28 @@ fn resets_the_chip_with_its_first_write_then_waits() {
 }
 
 #[test]
+fn expects_the_reset_command_to_go_unacknowledged_and_rechecks_the_chip_id() {
+    // The real AC108 resets before ACKing the reset command (seen on hardware).
+    let mut c = chip();
+    assert!(c.nacks_reset);
+    run(&mut c, &Config::default()).expect("a NACKed reset is normal");
+
+    let log = c.log();
+    let reset = index_of(&log, |op| *op == Op::Write(regs::CHIP_RST, regs::CHIP_RST_VAL)).unwrap();
+    let next_write = log[reset + 1..].iter().position(|op| matches!(op, Op::Write(..))).unwrap() + reset + 1;
+    let id_check = log[reset + 1..next_write].contains(&Op::Read(regs::CHIP_RST, regs::CHIP_ID));
+    assert!(id_check, "didn't confirm the chip answers again after reset");
+}
+
+#[test]
+fn also_works_with_a_chip_that_acknowledges_its_reset() {
+    let mut c = chip();
+    c.nacks_reset = false;
+    run(&mut c, &Config::default()).unwrap();
+    assert_eq!(c.registers(), &parse_regs(CAPTURE_16K_4CH));
+}
+
+#[test]
 fn pll_is_enabled_only_after_its_dividers_are_set() {
     let mut c = chip();
     run(&mut c, &Config::default()).unwrap();

@@ -22,8 +22,15 @@ pub fn configure(bus: &mut impl RegisterBus, delay: &mut impl Delay, cfg: &Confi
     }
 
     // Every register back to its default, so the result doesn't depend on history.
-    bus.write(CHIP_RST, CHIP_RST_VAL)?;
+    // The chip resets before acknowledging this write, so on real hardware it
+    // fails with a NACK even though the reset happens. Ignore that, then make
+    // sure the chip answers again.
+    let _ = bus.write(CHIP_RST, CHIP_RST_VAL);
     delay.delay_ms(2);
+    let id = bus.read(CHIP_RST)?;
+    if id != CHIP_ID {
+        return Err(Error::WrongChipId { found: id });
+    }
 
     // Keep BCLK/LRCK pins as inputs (they default to outputs) and the transmitter
     // off until the clock tree is running. Both data outputs on.
